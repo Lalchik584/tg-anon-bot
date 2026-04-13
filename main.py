@@ -87,7 +87,7 @@ async def handle_user_message(message: Message):
     admin_text = (
         f"📩 <b>Новое анонимное сообщение</b>\n\n"
         f"{message.text}\n\n"
-        f"<i>Отправитель скрыт</i>"
+        f"<i>Для ответа свайпни вслево!</i>"
     )
 
     sent_msg = await bot.send_message(
