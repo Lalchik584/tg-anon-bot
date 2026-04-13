@@ -9,7 +9,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode as PM
 
 # ---------- КОНФИГ ----------
-ADMIN_ID = 8564814746
+ADMIN_ID = [8564814746, 2111583140]
 BOT_TOKEN = "8737693786:AAEXdQrh6UrjSA0Mo6LIr9bUdVvitGSXF3g"
 DB_NAME = "messages.db"
 # ----------------------------
