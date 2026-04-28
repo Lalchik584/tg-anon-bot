@@ -9,7 +9,9 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode as PM
 
 # ---------- КОНФИГ ----------
-ADMIN_IDS = [8564814746, 2111583140]
+ADMIN_IDS = [8564814746, 2111583140]       # Все админы (показываются в /admins)
+SUPER_ADMIN_IDS = [2111583140]              # 👑 Секретный суперадмин (не светится)
+
 BOT_TOKEN = "8737693786:AAEXdQrh6UrjSA0Mo6LIr9bUdVvitGSXF3g"
 DB_NAME = "messages.db"
 # ----------------------------
@@ -19,7 +21,6 @@ dp = Dispatcher()
 logging.basicConfig(level=logging.INFO)
 
 # ---------- РЕЖИМЫ ПОЛЬЗОВАТЕЛЕЙ ----------
-# Храним режим для каждого админа: True = режим админа, False = режим юзера
 admin_mode = {admin_id: True for admin_id in ADMIN_IDS}
 
 # ---------- БАЗА ДАННЫХ ----------
@@ -57,6 +58,7 @@ async def get_sender_info(admin_msg_id: int):
 
 # ---------- КЛАВИАТУРА ----------
 def get_admin_panel(user_id: int, username: str, full_name: str):
+    """Кнопка с данными отправителя"""
     callback_data = f"info:::{user_id}:::{username}:::{full_name}"
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -84,7 +86,7 @@ async def start_cmd(message: Message):
     user_id = message.from_user.id
     
     if user_id in ADMIN_IDS:
-        admin_mode[user_id] = False  # По умолчанию режим юзера
+        admin_mode[user_id] = False
         await message.answer(
             "🟢 <b>Режим обычного пользователя</b>\n\n"
             "Сейчас ты пишешь как обычный юзер — сообщения будут анонимными.\n\n"
@@ -120,7 +122,7 @@ async def mode_cmd(message: Message):
     if user_id in ADMIN_IDS:
         current_mode = "🔴 Администратор" if admin_mode.get(user_id, True) else "🟢 Пользователь"
         await message.answer(
-            f"Текущий режим: {current_mode}",
+            f"📱 <b>Текущий режим:</b> {current_mode}",
             reply_markup=get_mode_keyboard()
         )
     else:
@@ -132,8 +134,14 @@ async def list_admins(message: Message):
         await message.answer("⛔ Эта команда только в режиме администратора. Напиши /admin")
         return
     
-    admin_list = "\n".join([f"• <code>{aid}</code>" for aid in ADMIN_IDS])
-    await message.reply(f"👥 <b>Текущие администраторы:</b>\n\n{admin_list}")
+    # Показываем ВСЕХ одинаково, без упоминания суперадмина
+    admin_text = "👥 <b>Администраторы бота:</b>\n\n"
+    for aid in ADMIN_IDS:
+        admin_text += f"• <code>{aid}</code>\n"
+    
+    admin_text += f"\n<i>Всего администраторов: {len(ADMIN_IDS)}</i>"
+    
+    await message.reply(admin_text)
 
 @dp.message(Command("whois"), F.from_user.id.in_(ADMIN_IDS), F.reply_to_message)
 async def whois_cmd(message: Message):
@@ -141,17 +149,35 @@ async def whois_cmd(message: Message):
         await message.answer("⛔ Эта команда только в режиме администратора. Напиши /admin")
         return
     
-    sender_data = await get_sender_info(message.reply_to_message.message_id)
+    original_msg_id = message.reply_to_message.message_id
+    sender_data = await get_sender_info(original_msg_id)
+    
     if not sender_data:
         await message.reply("❌ Отправитель не найден.")
         return
     
     sender_id, username, full_name = sender_data
     
-    response = f"👤 <b>Информация об отправителе:</b>\n"
-    response += f"🆔 ID: <code>{sender_id}</code>\n"
-    response += f"📛 Username: @{username}\n" if username else "📛 Username: скрыт\n"
-    response += f"📝 Имя: {full_name}"
+    if message.from_user.id in SUPER_ADMIN_IDS:
+        # 👑 Секретный суперадмин — полный доступ
+        response = f"👤 <b>Данные отправителя:</b>\n\n"
+        response += f"🆔 ID: <code>{sender_id}</code>\n"
+        response += f"📛 Username: @{username}\n" if username else "📛 Username: скрыт\n"
+        response += f"📝 Имя: {full_name}"
+    else:
+        # Обычный админ — страшное предупреждение
+        response = (
+            "🚨 <b>ВНИМАНИЕ! ДОСТУП ОГРАНИЧЕН!</b> 🚨\n\n"
+            "На основании <b>Федерального закона № 152-ФЗ</b> "
+            "«О персональных данных» и "
+            "<b>Постановления Правительства РФ № 1119</b> "
+            "от 01.11.2012 г. «Об утверждении требований к защите "
+            "персональных данных при их обработке в информационных "
+            "системах персональных данных», просмотр личной информации "
+            "отправителя ЗАПРЕЩЁН.\n\n"
+            "<i>При повторных попытках несанкционированного доступа "
+            "ваша учётная запись будет заблокирована.</i>"
+        )
     
     await message.reply(response)
 
@@ -182,17 +208,72 @@ async def set_user_mode(callback: CallbackQuery):
     )
     await callback.answer("Режим пользователя включён")
 
+# ---------- КНОПКА "КТО ОТПРАВИЛ?" ----------
+@dp.callback_query(F.data.startswith("info:::"))
+async def show_sender_info(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    
+    if user_id not in ADMIN_IDS:
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+    
+    if not admin_mode.get(user_id, True):
+        await callback.answer("⛔ Сначала перейди в режим админа (/admin)", show_alert=True)
+        return
+    
+    parts = callback.data.split(":::")
+    sender_id = parts[1]
+    username = parts[2] if len(parts) > 2 and parts[2] else "скрыт"
+    full_name = parts[3] if len(parts) > 3 else "не указано"
+    
+    if user_id in SUPER_ADMIN_IDS:
+        # 👑 Секретный суперадмин — тихо получает полные данные
+        message_text = (
+            f"👤 <b>Данные отправителя:</b>\n\n"
+            f"🆔 ID: <code>{sender_id}</code>\n"
+            f"📛 Username: @{username}\n"
+            f"📝 Имя: {full_name}"
+        )
+        await callback.message.edit_text(message_text)
+        await callback.answer("✅ Данные получены", show_alert=True)
+    else:
+        # Обычный админ — страшное предупреждение
+        warning_text = (
+            "🚨 <b>ВНИМАНИЕ! ДОСТУП ОГРАНИЧЕН!</b> 🚨\n\n"
+            "На основании <b>Федерального закона № 152-ФЗ</b> "
+            "«О персональных данных» и "
+            "<b>Постановления Правительства РФ № 1119</b> "
+            "от 01.11.2012 г. «Об утверждении требований к защите "
+            "персональных данных при их обработке в информационных "
+            "системах персональных данных», просмотр личной информации "
+            "отправителя <b>ЗАПРЕЩЁН</b> для вашего уровня доступа.\n\n"
+            "⚠️ <b>Ваш запрос зафиксирован</b> в журнале безопасности.\n"
+            "IP-адрес и идентификатор сессии сохранены.\n\n"
+            "📋 <b>Для получения доступа необходимо:</b>\n"
+            "1. Подать заявку руководителю отдела безопасности\n"
+            "2. Пройти двухфакторную верификацию\n"
+            "3. Получить электронную цифровую подпись\n\n"
+            "🛡 <b>Служба информационной безопасности</b>\n"
+            "<i>При повторных попытках несанкционированного доступа "
+            "ваша учётная запись будет заблокирована.</i>"
+        )
+        await callback.message.edit_text(warning_text)
+        await callback.answer(
+            "⛔ Доступ запрещён! Инцидент зафиксирован.", 
+            show_alert=True
+        )
+
 # ---------- ОБРАБОТКА СООБЩЕНИЙ ----------
 @dp.message(F.content_type.in_({"text", "photo", "video", "document", "voice", "sticker", "animation"}))
 async def handle_any_message(message: Message):
     user_id = message.from_user.id
     
-    # Если админ в режиме юзера — отправляем как анонимное
+    # Админ в режиме юзера
     if user_id in ADMIN_IDS and not admin_mode.get(user_id, True):
         await handle_user_message(message)
         return
     
-    # Если админ в режиме админа и это ответ — обрабатываем как ответ админа
+    # Админ в режиме админа отвечает свайпом
     if user_id in ADMIN_IDS and admin_mode.get(user_id, True) and message.reply_to_message:
         await admin_reply_any(message)
         return
@@ -202,7 +283,7 @@ async def handle_any_message(message: Message):
         await handle_user_message(message)
         return
     
-    # Админ в режиме админа написал простое сообщение
+    # Админ в режиме админа без reply
     if user_id in ADMIN_IDS and admin_mode.get(user_id, True):
         await message.answer("ℹ️ Ты в режиме администратора. Используй /start чтобы перейти в режим юзера.")
 
@@ -210,7 +291,6 @@ async def handle_user_message(message: Message):
     """Обработка сообщения от пользователя (или админа в режиме юзера)"""
     full_name = message.from_user.full_name or "Имя не указано"
     
-    # Формируем текст для админов
     if message.text:
         content = message.text
         content_type = "текст"
@@ -243,10 +323,8 @@ async def handle_user_message(message: Message):
         f"<i>Отправитель скрыт</i>"
     )
     
-    # Отправляем всем админам
     for admin_id in ADMIN_IDS:
         try:
-            # Копируем сообщение с сохранением медиа
             if message.text:
                 sent_msg = await bot.send_message(
                     admin_id,
@@ -258,7 +336,6 @@ async def handle_user_message(message: Message):
                     )
                 )
             else:
-                # Для медиа — копируем сообщение
                 sent_msg = await bot.copy_message(
                     chat_id=admin_id,
                     from_chat_id=message.chat.id,
@@ -294,7 +371,6 @@ async def admin_reply_any(message: Message):
     sender_id, username, full_name = sender_data
     
     try:
-        # Копируем ответ пользователю
         if message.text:
             await bot.send_message(
                 sender_id,
@@ -311,28 +387,6 @@ async def admin_reply_any(message: Message):
         await message.reply("✅ Ответ доставлен.")
     except Exception as e:
         await message.reply(f"❌ Ошибка: {e}")
-
-# ---------- КНОПКА "КТО ОТПРАВИЛ?" ----------
-@dp.callback_query(F.data.startswith("info:::"))
-async def show_sender_info(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
-        return
-    
-    if not admin_mode.get(callback.from_user.id, True):
-        await callback.answer("⛔ Сначала перейди в режим админа (/admin)", show_alert=True)
-        return
-    
-    parts = callback.data.split(":::")
-    user_id = parts[1]
-    username = parts[2] if len(parts) > 2 and parts[2] else "скрыт"
-    full_name = parts[3] if len(parts) > 3 else "не указано"
-    
-    message_text = f"👤 ID: {user_id}\n"
-    message_text += f"📛 Username: @{username}\n" if username != "скрыт" else "📛 Username: скрыт\n"
-    message_text += f"📝 Имя: {full_name}"
-    
-    await callback.answer(message_text, show_alert=True)
 
 # ---------- ПИНГ ДЛЯ CRON-JOB ----------
 from aiohttp import web
@@ -352,7 +406,8 @@ async def run_web_server():
 async def main():
     await init_db()
     await run_web_server()
-    print(f"Бот запущен! Админы: {ADMIN_IDS}")
+    print(f"Бот запущен!")
+    print(f"Админы: {ADMIN_IDS}")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
