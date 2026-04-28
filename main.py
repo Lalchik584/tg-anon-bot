@@ -9,8 +9,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode as PM
 
 # ---------- КОНФИГ ----------
-ADMIN_IDS = [8564814746, 2111583140]       # Все админы (показываются в /admins)
-SUPER_ADMIN_IDS = [2111583140]              # 👑 Секретный суперадмин (не светится)
+ADMIN_IDS = [8564814746, 2111583140]       # Все админы
+SUPER_ADMIN_IDS = [2111583140]              # 👑 Секретный суперадмин
 
 BOT_TOKEN = "8737693786:AAEXdQrh6UrjSA0Mo6LIr9bUdVvitGSXF3g"
 DB_NAME = "messages.db"
@@ -134,7 +134,6 @@ async def list_admins(message: Message):
         await message.answer("⛔ Эта команда только в режиме администратора. Напиши /admin")
         return
     
-    # Показываем ВСЕХ одинаково, без упоминания суперадмина
     admin_text = "👥 <b>Администраторы бота:</b>\n\n"
     for aid in ADMIN_IDS:
         admin_text += f"• <code>{aid}</code>\n"
@@ -165,18 +164,13 @@ async def whois_cmd(message: Message):
         response += f"📛 Username: @{username}\n" if username else "📛 Username: скрыт\n"
         response += f"📝 Имя: {full_name}"
     else:
-        # Обычный админ — страшное предупреждение
+        # Обычный админ — официальный отказ
         response = (
-            "🚨 <b>ВНИМАНИЕ! ДОСТУП ОГРАНИЧЕН!</b> 🚨\n\n"
-            "На основании <b>Федерального закона № 152-ФЗ</b> "
-            "«О персональных данных» и "
-            "<b>Постановления Правительства РФ № 1119</b> "
-            "от 01.11.2012 г. «Об утверждении требований к защите "
-            "персональных данных при их обработке в информационных "
-            "системах персональных данных», просмотр личной информации "
-            "отправителя ЗАПРЕЩЁН.\n\n"
-            "<i>При повторных попытках несанкционированного доступа "
-            "ваша учётная запись будет заблокирована.</i>"
+            "ℹ️ <b>Информация об отправителе</b>\n\n"
+            "На основании ст. 7 Федерального закона от 27.07.2006 № 152-ФЗ "
+            "«О персональных данных», доступ к личной информации "
+            "отправителя ограничен.\n\n"
+            "<i>Для получения доступа обратитесь к руководителю.</i>"
         )
     
     await message.reply(response)
@@ -227,39 +221,17 @@ async def show_sender_info(callback: CallbackQuery):
     full_name = parts[3] if len(parts) > 3 else "не указано"
     
     if user_id in SUPER_ADMIN_IDS:
-        # 👑 Секретный суперадмин — тихо получает полные данные
-        message_text = (
-            f"👤 <b>Данные отправителя:</b>\n\n"
-            f"🆔 ID: <code>{sender_id}</code>\n"
-            f"📛 Username: @{username}\n"
-            f"📝 Имя: {full_name}"
-        )
-        await callback.message.edit_text(message_text)
-        await callback.answer("✅ Данные получены", show_alert=True)
+        # 👑 Секретный суперадмин — получает данные во всплывающем окне
+        message_text = f"👤 ID: {sender_id}\n"
+        message_text += f"📛 Username: @{username}\n" if username != "скрыт" else "📛 Username: скрыт\n"
+        message_text += f"📝 Имя: {full_name}"
+        
+        await callback.answer(message_text, show_alert=True)
     else:
-        # Обычный админ — страшное предупреждение
-        warning_text = (
-            "🚨 <b>ВНИМАНИЕ! ДОСТУП ОГРАНИЧЕН!</b> 🚨\n\n"
-            "На основании <b>Федерального закона № 152-ФЗ</b> "
-            "«О персональных данных» и "
-            "<b>Постановления Правительства РФ № 1119</b> "
-            "от 01.11.2012 г. «Об утверждении требований к защите "
-            "персональных данных при их обработке в информационных "
-            "системах персональных данных», просмотр личной информации "
-            "отправителя <b>ЗАПРЕЩЁН</b> для вашего уровня доступа.\n\n"
-            "⚠️ <b>Ваш запрос зафиксирован</b> в журнале безопасности.\n"
-            "IP-адрес и идентификатор сессии сохранены.\n\n"
-            "📋 <b>Для получения доступа необходимо:</b>\n"
-            "1. Подать заявку руководителю отдела безопасности\n"
-            "2. Пройти двухфакторную верификацию\n"
-            "3. Получить электронную цифровую подпись\n\n"
-            "🛡 <b>Служба информационной безопасности</b>\n"
-            "<i>При повторных попытках несанкционированного доступа "
-            "ваша учётная запись будет заблокирована.</i>"
-        )
-        await callback.message.edit_text(warning_text)
+        # Обычный админ — официальный отказ во всплывающем окне
         await callback.answer(
-            "⛔ Доступ запрещён! Инцидент зафиксирован.", 
+            "На основании ст. 7 ФЗ № 152 «О персональных данных», "
+            "доступ к информации об отправителе ограничен.",
             show_alert=True
         )
 
@@ -324,6 +296,10 @@ async def handle_user_message(message: Message):
     )
     
     for admin_id in ADMIN_IDS:
+        # Суперадмин не получает свои же сообщения
+        if message.from_user.id in SUPER_ADMIN_IDS and admin_id == message.from_user.id:
+            continue
+        
         try:
             if message.text:
                 sent_msg = await bot.send_message(
